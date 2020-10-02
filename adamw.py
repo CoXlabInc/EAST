@@ -1,17 +1,16 @@
-from keras.optimizers import Optimizer
-from keras import backend as K
+from tensorflow.keras.optimizers import Optimizer
+from tensorflow.keras import backend as K
 import six
 import copy
 from six.moves import zip
-from keras.utils.generic_utils import serialize_keras_object
-from keras.utils.generic_utils import deserialize_keras_object
-from keras.legacy import interfaces
+from tensorflow.keras.utils import serialize_keras_object
+from tensorflow.keras.utils import deserialize_keras_object
 
 class AdamW(Optimizer):
     """Adam optimizer.
     Default parameters follow those provided in the original paper.
     # Arguments
-        lr: float >= 0. Learning rate.
+        learning_rate: float >= 0. Learning rate.
         beta_1: float, 0 < beta < 1. Generally close to 1.
         beta_2: float, 0 < beta < 1. Generally close to 1.
         epsilon: float >= 0. Fuzz factor.
@@ -23,12 +22,12 @@ class AdamW(Optimizer):
         - [Fixing Weight Decay Regularization in Adam](https://arxiv.org/abs/1711.05101)
     """
 
-    def __init__(self, lr=0.001, beta_1=0.9, beta_2=0.999, weight_decay=1e-4,  # decoupled weight decay (1/4)
-                 epsilon=1e-8, decay=0., **kwargs):
-        super(AdamW, self).__init__(**kwargs)
+    def __init__(self, learning_rate=0.001, beta_1=0.9, beta_2=0.999, weight_decay=1e-4,  # decoupled weight decay (1/4)
+                 epsilon=1e-8, decay=0., name='adamw', **kwargs):
+        super(AdamW, self).__init__(name, **kwargs)
         with K.name_scope(self.__class__.__name__):
             self.iterations = K.variable(0, dtype='int64', name='iterations')
-            self.lr = K.variable(lr, name='lr')
+            self.learning_rate = K.variable(learning_rate, name='learning_rate')
             self.beta_1 = K.variable(beta_1, name='beta_1')
             self.beta_2 = K.variable(beta_2, name='beta_2')
             self.decay = K.variable(decay, name='decay')
@@ -36,19 +35,18 @@ class AdamW(Optimizer):
         self.epsilon = epsilon
         self.initial_decay = decay
 
-    @interfaces.legacy_get_updates_support
     def get_updates(self, loss, params):
         grads = self.get_gradients(loss, params)
         self.updates = [K.update_add(self.iterations, 1)]
         wd = self.wd # decoupled weight decay (3/4)
 
-        lr = self.lr
+        learning_rate = self.learning_rate
         if self.initial_decay > 0:
-            lr *= (1. / (1. + self.decay * K.cast(self.iterations,
+            learning_rate *= (1. / (1. + self.decay * K.cast(self.iterations,
                                                   K.dtype(self.decay))))
 
         t = K.cast(self.iterations, K.floatx()) + 1
-        lr_t = lr * (K.sqrt(1. - K.pow(self.beta_2, t)) /
+        learning_rate_t = learning_rate * (K.sqrt(1. - K.pow(self.beta_2, t)) /
                      (1. - K.pow(self.beta_1, t)))
 
         ms = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
@@ -58,7 +56,7 @@ class AdamW(Optimizer):
         for p, g, m, v in zip(params, grads, ms, vs):
             m_t = (self.beta_1 * m) + (1. - self.beta_1) * g
             v_t = (self.beta_2 * v) + (1. - self.beta_2) * K.square(g)
-            p_t = p - lr_t * m_t / (K.sqrt(v_t) + self.epsilon) - lr * wd * p # decoupled weight decay (4/4)
+            p_t = p - learning_rate_t * m_t / (K.sqrt(v_t) + self.epsilon) - learning_rate * wd * p # decoupled weight decay (4/4)
 
             self.updates.append(K.update(m, m_t))
             self.updates.append(K.update(v, v_t))
@@ -72,7 +70,7 @@ class AdamW(Optimizer):
         return self.updates
 
     def get_config(self):
-        config = {'lr': float(K.get_value(self.lr)),
+        config = {'learning_rate': float(K.get_value(self.lr)),
                   'beta_1': float(K.get_value(self.beta_1)),
                   'beta_2': float(K.get_value(self.beta_2)),
                   'decay': float(K.get_value(self.decay)),

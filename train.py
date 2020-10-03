@@ -134,16 +134,18 @@ class SmallTextWeight(Callback):
         K.set_value(self.weight, 0)
 
 class ValidationEvaluator(Callback):
-    def __init__(self, validation_data, validation_log_dir, period=5):
+    def __init__(self, validation_data, validation_log_dir, period=1):
         super(Callback, self).__init__()
 
         self.period = period
         self.validation_data = validation_data
         self.validation_log_dir = validation_log_dir
         self.val_writer = tf.summary.FileWriter(self.validation_log_dir)
+        print('len(self.validation_data): %d' % (len(self.validation_data)))
 
     def on_epoch_end(self, epoch, logs={}):
         if (epoch + 1) % self.period == 0:
+            print('len(self.validation_data): %d' % (len(self.validation_data)))
             val_loss, val_score_map_loss, val_geo_map_loss = self.model.evaluate([self.validation_data[0], self.validation_data[1], self.validation_data[2], self.validation_data[3]],
                                                                                  [self.validation_data[3], self.validation_data[4]],
                                                                                  batch_size=FLAGS.batch_size)
@@ -209,9 +211,9 @@ def main(argv=None):
         shutil.rmtree(FLAGS.checkpoint_path)
         os.mkdir(FLAGS.checkpoint_path)
 
-    train_data_x, train_data_y = data_processor.generator(FLAGS)
-    print("train_data ready(%u, %u)" % (len(train_data_x[0]), len(train_data_y[0])))
-    
+    train_data_generator = data_processor.generator(FLAGS)
+    #train_data_x, train_data_y = data_processor.load_train_data(FLAGS)
+    #print('# of train data: %d' %(len(train_data_x[0])))
     train_samples_count = data_processor.count_samples(FLAGS)
     print("train_samples_count")
 
@@ -254,7 +256,8 @@ def main(argv=None):
     with open(FLAGS.checkpoint_path + '/model.json', 'w') as json_file:
         json_file.write(model_json)
 
-    history = parallel_model.fit(train_data_x, train_data_y, batch_size=FLAGS.batch_size, epochs=FLAGS.max_epochs, verbose=1, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=True)
+    #history = parallel_model.fit(x=train_data_x, y=train_data_y, batch_size=FLAGS.batch_size, epochs=FLAGS.max_epochs, verbose=1, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=True)
+    history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, steps_per_epoch=train_samples_count/FLAGS.batch_size, callbacks=callbacks, verbose=1)
 
 if __name__ == '__main__':
     main()

@@ -37,7 +37,7 @@ def load_annotation(p):
     text_tags = []
     if not os.path.exists(p):
         return np.array(text_polys, dtype=np.float32)
-    with open(p, 'r') as f:
+    with open(p, 'r', encoding='utf-8') as f:
         reader = csv.reader(f)
         for line in reader:
             label = line[-1]
@@ -640,6 +640,124 @@ def threadsafe_generator(f):
         return threadsafe_iter(f(*a, **kw))
     return g
 
+def load_train_data_process(args):
+    (image_file, FLAGS, is_train) = args
+    background_ratio=3./8
+    random_scale=np.array([0.5, 1, 2.0, 3.0])
+    vis = False
+    input_size=512
+    
+    try:
+        im = cv2.imread(image_file)
+        h, w, _ = im.shape
+        txt_file = get_text_file(image_file)
+        if not os.path.exists(txt_file):
+            print('text file {} does not exists'.format(txt_file))
+            return None
+
+        text_polys, text_tags = load_annotation(txt_file)
+        text_polys, text_tags = check_and_validate_polys(FLAGS, text_polys, text_tags, (h, w))
+
+        # random scale this image
+        rd_scale = np.random.choice(random_scale)                
+        x_scale_variation = np.random.randint(-10, 10) / 100.
+        y_scale_variation = np.random.randint(-10, 10) / 100.
+        im = cv2.resize(im, dsize=None, fx=rd_scale + x_scale_variation, fy=rd_scale + y_scale_variation)
+        text_polys[:, :, 0] *= rd_scale + x_scale_variation
+        text_polys[:, :, 1] *= rd_scale + y_scale_variation
+
+        # random crop a area from image
+        r = np.random.rand()
+        if r < background_ratio:
+            # crop background
+            im, text_polys, text_tags = crop_area(FLAGS, im, text_polys, text_tags, crop_background=True)
+            if text_polys.shape[0] > 0:
+                print('train data (%s): cannot find background' % (image_file))
+                return None
+            # pad and resize image
+            im, _, _ = pad_image(im, FLAGS.input_size, is_train)
+            im = cv2.resize(im, dsize=(input_size, input_size))
+            score_map = np.zeros((input_size, input_size), dtype=np.uint8)
+            geo_map_channels = 5 if FLAGS.geometry == 'RBOX' else 8
+            geo_map = np.zeros((input_size, input_size, geo_map_channels), dtype=np.float32)
+            overly_small_text_region_training_mask = np.ones((input_size, input_size), dtype=np.uint8)
+            text_region_boundary_training_mask = np.ones((input_size, input_size), dtype=np.uint8)
+        else:
+            im, text_polys, text_tags = crop_area(FLAGS, im, text_polys, text_tags, crop_background=False)
+            if text_polys.shape[0] == 0:
+                print('train data (%s): shape[0] == 0' % (image_file))
+                return None
+            h, w, _ = im.shape
+            im, shift_h, shift_w = pad_image(im, FLAGS.input_size, is_train)
+            im, text_polys = resize_image(im, text_polys, FLAGS.input_size, shift_h, shift_w)
+            new_h, new_w, _ = im.shape
+            score_map, geo_map, overly_small_text_region_training_mask, text_region_boundary_training_mask = generate_rbox(FLAGS, (new_h, new_w), text_polys, text_tags)
+
+        if vis:
+            fig, axs = plt.subplots(3, 2, figsize=(20, 30))
+            axs[0, 0].imshow(im[:, :, ::-1])
+            axs[0, 0].set_xticks([])
+            axs[0, 0].set_yticks([])
+            for poly in text_polys:
+                poly_h = min(abs(poly[3, 1] - poly[0, 1]), abs(poly[2, 1] - poly[1, 1]))
+                poly_w = min(abs(poly[1, 0] - poly[0, 0]), abs(poly[2, 0] - poly[3, 0]))
+                axs[0, 0].add_artist(Patches.Polygon(
+                    poly, facecolor='none', edgecolor='green', linewidth=2, linestyle='-', fill=True))
+                axs[0, 0].text(poly[0, 0], poly[0, 1], '{:.0f}-{:.0f}'.format(poly_h, poly_w), color='purple')
+            axs[0, 1].imshow(score_map[::, ::])
+            axs[0, 1].set_xticks([])
+            axs[0, 1].set_yticks([])
+            axs[1, 0].imshow(geo_map[::, ::, 0])
+            axs[1, 0].set_xticks([])
+            axs[1, 0].set_yticks([])
+            axs[1, 1].imshow(geo_map[::, ::, 1])
+            axs[1, 1].set_xticks([])
+            axs[1, 1].set_yticks([])
+            axs[2, 0].imshow(geo_map[::, ::, 2])
+            axs[2, 0].set_xticks([])
+            axs[2, 0].set_yticks([])
+            axs[2, 1].imshow(training_mask[::, ::])
+            axs[2, 1].set_xticks([])
+            axs[2, 1].set_yticks([])
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+        im = (im / 127.5) - 1.
+        print('OK: %s' % (image_file))
+        return [ im[:, :, ::-1].astype(np.float32), image_file, score_map[::4, ::4, np.newaxis].astype(np.float32), geo_map[::4, ::4, :].astype(np.float32), overly_small_text_region_training_mask[::4, ::4, np.newaxis].astype(np.float32), text_region_boundary_training_mask[::4, ::4, np.newaxis].astype(np.float32) ]
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+def load_train_data(FLAGS, is_train=True):
+    image_files = np.array(get_images(FLAGS.training_data_path))
+    images = []
+    score_maps = []
+    geo_maps = []
+    overly_small_text_region_training_masks = []
+    text_region_boundary_training_masks = []
+
+    pool = Pool(FLAGS.nb_workers)
+    if sys.version_info >= (3, 0):
+        loaded_data = pool.map_async(load_train_data_process, zip(image_files, itertools.repeat(FLAGS), itertools.repeat(is_train))).get(9999999)
+    else:
+        loaded_data = pool.map_async(load_train_data_process, itertools.izip(image_files, itertools.repeat(FLAGS), itertools. repeat(is_train))).get(999999)
+    pool.close()
+    pool.join()
+
+    images = [item[0] for item in loaded_data if not item is None]
+    image_fns = [item[1] for item in loaded_data if not item is None]
+    score_maps = [item[2] for item in loaded_data if not item is None]
+    geo_maps = [item[3] for item in loaded_data if not item is None]
+    overly_small_text_region_training_masks = [item[4] for item in loaded_data if not item is None]
+    text_region_boundary_training_masks = [item[5] for item in loaded_data if not item is None]
+    print('Number of training images : %d' % len(images))
+
+    return [ np.array(images), np.array(overly_small_text_region_training_masks), np.array(text_region_boundary_training_masks), np.array(score_maps) ], [ np.array(score_maps), np.array(geo_maps) ]
+
+    
 @threadsafe_generator
 def generator(FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=None, random_scale=np.array([0.5, 1, 2.0, 3.0]), vis=False):
     image_list = np.array(get_images(FLAGS.training_data_path))

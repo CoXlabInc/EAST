@@ -135,16 +135,18 @@ class SmallTextWeight(Callback):
         K.set_value(self.weight, 0)
 
 class ValidationEvaluator(Callback):
-    def __init__(self, validation_data, validation_log_dir, period=5):
+    def __init__(self, validation_data, validation_log_dir, period=1):
         super(Callback, self).__init__()
 
         self.period = period
         self.validation_data = validation_data
         self.validation_log_dir = validation_log_dir
         self.val_writer = tf.summary.FileWriter(self.validation_log_dir)
+        print('len(self.validation_data): %d' % (len(self.validation_data)))
 
     def on_epoch_end(self, epoch, logs={}):
         if (epoch + 1) % self.period == 0:
+            print('len(self.validation_data): %d' % (len(self.validation_data)))
             val_loss, val_score_map_loss, val_geo_map_loss = self.model.evaluate([self.validation_data[0], self.validation_data[1], self.validation_data[2], self.validation_data[3]],
                                                                                  [self.validation_data[3], self.validation_data[4]],
                                                                                  batch_size=FLAGS.batch_size)
@@ -211,6 +213,8 @@ def main(argv=None):
         os.mkdir(FLAGS.checkpoint_path)
 
     train_data_generator = data_processor.generator(FLAGS)
+    #train_data_x, train_data_y = data_processor.load_train_data(FLAGS)
+    #print('# of train data: %d' %(len(train_data_x[0])))
     train_samples_count = data_processor.count_samples(FLAGS)
 
     val_data = data_processor.load_data(FLAGS)
@@ -233,10 +237,11 @@ def main(argv=None):
 
     lr_scheduler = LearningRateScheduler(lr_decay)
     ckpt = CustomModelCheckpoint(model=east.model, path=FLAGS.checkpoint_path + '/model-{epoch:02d}.h5', period=FLAGS.save_checkpoint_epochs, save_weights_only=True)
-    tb = CustomTensorBoard(log_dir=FLAGS.checkpoint_path + '/train', score_map_loss_weight=score_map_loss_weight, small_text_weight=small_text_weight, data_generator=train_data_generator, write_graph=True)
+    #tb = CustomTensorBoard(log_dir=FLAGS.checkpoint_path + '/train', score_map_loss_weight=score_map_loss_weight, small_text_weight=small_text_weight, data_generator=train_data_generator, write_graph=True)
     small_text_weight_callback = SmallTextWeight(small_text_weight)
-    validation_evaluator = ValidationEvaluator(val_data, validation_log_dir=FLAGS.checkpoint_path + '/val')
-    callbacks = [lr_scheduler, ckpt, tb, small_text_weight_callback, validation_evaluator]
+    print('val_data length: %d' % (len(val_data)))
+    validation_evaluator = ValidationEvaluator(validation_data=val_data, validation_log_dir=FLAGS.checkpoint_path + '/val')
+    callbacks = [lr_scheduler, ckpt, small_text_weight_callback, validation_evaluator]
 
     opt = AdamW(FLAGS.init_learning_rate)
 
@@ -250,8 +255,8 @@ def main(argv=None):
     with open(FLAGS.checkpoint_path + '/model.json', 'w') as json_file:
         json_file.write(model_json)
 
-    history = parallel_model.fit_generator(train_data_generator, epochs=FLAGS.max_epochs, steps_per_epoch=train_samples_count/FLAGS.batch_size, workers=FLAGS.nb_workers, use_multiprocessing=True, max_queue_size=10, callbacks=callbacks, verbose=1)
-
+    #history = parallel_model.fit(train_data_x, train_data_y, batch_size=FLAGS.batch_size, epochs=FLAGS.max_epochs, callbacks=callbacks, verbose=1)
+    history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, steps_per_epoch=train_samples_count/FLAGS.batch_size, callbacks=callbacks, verbose=1)
 if __name__ == '__main__':
     main()
 

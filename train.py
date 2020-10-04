@@ -241,7 +241,6 @@ def main(argv=None):
         json_file.write(model_json)
     plot_model(east.model, to_file=FLAGS.checkpoint_path + '/east.png', show_shapes=True, show_layer_names=True, expand_nested=True)
     plot_model(east.resnet, to_file=FLAGS.checkpoint_path + '/resnet.png', show_shapes=True, show_layer_names=True, expand_nested=True)
-    return
 
     train_data_generator = data_processor.generator(FLAGS)
     #train_data_x, train_data_y = data_processor.load_train_data(FLAGS)

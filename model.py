@@ -29,7 +29,7 @@ class EAST_model:
         x = resnet.get_layer('conv5_block3_out').output
 
         x = Lambda(resize_bilinear, name='resize_1')(x)
-        x = concatenate([x, resnet.get_layer('conv4_block6_out').output], axis=3)
+        x = concatenate([x, resnet.get_layer('conv4_block6_out').output], axis=3, name='concatA')
         x = Conv2D(128, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
@@ -38,7 +38,7 @@ class EAST_model:
         x = Activation('relu')(x)
 
         x = Lambda(resize_bilinear, name='resize_2')(x)
-        x = concatenate([x, resnet.get_layer('conv3_block4_out').output], axis=3)
+        x = concatenate([x, resnet.get_layer('conv3_block4_out').output], axis=3, name='concatB')
         x = Conv2D(64, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
@@ -47,7 +47,8 @@ class EAST_model:
         x = Activation('relu')(x)
 
         x = Lambda(resize_bilinear, name='resize_3')(x)
-        x = concatenate([x, ZeroPadding2D(((1, 0),(1, 0)))(resnet.get_layer('conv2_block3_out').output)], axis=3)
+        #x = concatenate([x, ZeroPadding2D(((1, 0),(1, 0)))(resnet.get_layer('conv2_block3_out').output)], axis=3, name='concatC')
+        x = concatenate([x, resnet.get_layer('conv2_block3_out').output], axis=3, name='concatC')
         x = Conv2D(32, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)

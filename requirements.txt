@@ -7,3 +7,4 @@ numpy==1.16.0
 ipython==5.10.0
 Pillow==4.2.1
 opencv-python==4.3.0.38
+pydot==1.4.1

@@ -674,7 +674,6 @@ def load_train_data_process(args):
             # crop background
             im, text_polys, text_tags = crop_area(FLAGS, im, text_polys, text_tags, crop_background=True)
             if text_polys.shape[0] > 0:
-                print('train data (%s): cannot find background' % (image_file))
                 return None
             # pad and resize image
             im, _, _ = pad_image(im, FLAGS.input_size, is_train)
@@ -687,7 +686,6 @@ def load_train_data_process(args):
         else:
             im, text_polys, text_tags = crop_area(FLAGS, im, text_polys, text_tags, crop_background=False)
             if text_polys.shape[0] == 0:
-                print('train data (%s): shape[0] == 0' % (image_file))
                 return None
             h, w, _ = im.shape
             im, shift_h, shift_w = pad_image(im, FLAGS.input_size, is_train)
@@ -726,7 +724,6 @@ def load_train_data_process(args):
             plt.close()
 
         im = (im / 127.5) - 1.
-        print('OK: %s' % (image_file))
         return [ im[:, :, ::-1].astype(np.float32), image_file, score_map[::4, ::4, np.newaxis].astype(np.float32), geo_map[::4, ::4, :].astype(np.float32), overly_small_text_region_training_mask[::4, ::4, np.newaxis].astype(np.float32), text_region_boundary_training_mask[::4, ::4, np.newaxis].astype(np.float32) ]
 
     except Exception as e:
@@ -759,8 +756,6 @@ def load_train_data(FLAGS, is_train=True):
 
     return [ np.array(images), np.array(overly_small_text_region_training_masks), np.array(text_region_boundary_training_masks), np.array(score_maps) ], [ np.array(score_maps), np.array(geo_maps) ]
 
-    
-#@threadsafe_generator
 def generator(FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=None, random_scale=np.array([0.5, 1, 2.0, 3.0]), vis=False):
     image_list = np.array(get_images(FLAGS.training_data_path))
     if not idx is None:
@@ -778,7 +773,6 @@ def generator(FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=N
         text_region_boundary_training_masks = []
         for i in index:
             try:
-                print("train data [%u]" % (i))
                 im_fn = image_list[i]
                 im = cv2.imread(im_fn)
                 h, w, _ = im.shape
@@ -809,7 +803,6 @@ def generator(FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=N
                     im, text_polys, text_tags = crop_area(FLAGS, im, text_polys, text_tags, crop_background=True)
                     if text_polys.shape[0] > 0:
                         # cannot find background
-                        print('cannot find background')
                         continue
                     # print("train data [%u]-2-1-1" % (i))
                     # pad and resize image
@@ -826,7 +819,6 @@ def generator(FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=N
                     # print("train data [%u]-2-2" % (i))
                     im, text_polys, text_tags = crop_area(FLAGS, im, text_polys, text_tags, crop_background=False)
                     if text_polys.shape[0] == 0:
-                        print('cannot find background')
                         continue
                     h, w, _ = im.shape
                     # print("train data [%u]-2-2-1" % (i))

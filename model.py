@@ -75,4 +75,4 @@ class EAST_model:
         self.target_score_map = target_score_map
         self.pred_score_map = pred_score_map
         self.pred_geo_map = pred_geo_map
-
+        self.resnet = resnet

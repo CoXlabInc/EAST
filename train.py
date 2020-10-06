@@ -12,6 +12,7 @@ from tensorflow.keras.utils import plot_model
 from tensorflow.python.keras.utils import data_utils
 from tensorflow.keras.optimizers import Adam, SGD
 import tensorflow.keras.backend as K
+from tensorflow import lite
 
 from adamw import AdamW
 
@@ -59,11 +60,16 @@ class CustomModelCheckpoint(Callback):
         self.epochs_since_last_save += 1
         if self.epochs_since_last_save >= self.period:
             self.epochs_since_last_save = 0
-            print("CustomModelCheckpoint:" + self.path.format(epoch=epoch + 1, **logs))
+            file_name = self.path + '/model-{epoch:02d}.h5'.format(epoch=epoch + 1, **logs)
+            file_name_inf = self.path + '/model-{epoch:02d}-inf.h5'.format(epoch=epoch + 1, **logs)
+            print("CustomModelCheckpoint:" + file_name)
             if self.save_weights_only:
-                self.model_for_saving.save_weights(self.path.format(epoch=epoch + 1, **logs), overwrite=True)
+                self.model_for_saving.save_weights(file_name, overwrite=True)
             else:
-                self.model_for_saving.save(self.path.format(epoch=epoch + 1, **logs), overwrite=True)
+                self.model_for_saving.save(file_name, overwrite=True)
+            self.model_for_saving.save(file_name_inf, overwrite=True, include_optimizer=False)
+            tflite_model = lite.TFLiteConverter.from_keras_model_file(file_name_inf).convert()
+            open(file_name + '.tflite', 'wb').write(tflite_model)
 
 
 def make_image_summary(tensor):
@@ -252,7 +258,7 @@ def main(argv=None):
     print("val_data")
 
     lr_scheduler = LearningRateScheduler(lr_decay)
-    ckpt = CustomModelCheckpoint(model=east.model, path=FLAGS.checkpoint_path + '/model-{epoch:02d}.h5', period=FLAGS.save_checkpoint_epochs, save_weights_only=False)
+    ckpt = CustomModelCheckpoint(model=east.model, path=FLAGS.checkpoint_path, period=FLAGS.save_checkpoint_epochs, save_weights_only=False)
     # tb = CustomTensorBoard(log_dir=FLAGS.checkpoint_path + '/train', score_map_loss_weight=score_map_loss_weight, small_text_weight=small_text_weight, data_generator=train_data_generator, write_graph=True)
     small_text_weight_callback = SmallTextWeight(small_text_weight)
     validation_evaluator = ValidationEvaluator(val_data, validation_log_dir=FLAGS.checkpoint_path + '/val')

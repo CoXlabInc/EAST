@@ -241,8 +241,8 @@ def main(argv=None):
     model_json = east.model.to_json()
     with open(FLAGS.checkpoint_path + '/model.json', 'w') as json_file:
         json_file.write(model_json)
-    #plot_model(east.model, to_file=FLAGS.checkpoint_path + '/east.png', show_shapes=True, show_layer_names=True, expand_nested=True)
-    #plot_model(east.resnet, to_file=FLAGS.checkpoint_path + '/resnet.png', show_shapes=True, show_layer_names=True, expand_nested=True)
+    plot_model(east.model, to_file=FLAGS.checkpoint_path + '/east-train.png', show_shapes=True, show_layer_names=True, expand_nested=True)
+    plot_model(east.resnet, to_file=FLAGS.checkpoint_path + '/resnet.png', show_shapes=True, show_layer_names=True, expand_nested=True)
 
     train_data_generator = data_processor.generator(FLAGS)
     #train_data_x, train_data_y = data_processor.load_train_data(FLAGS)
@@ -264,9 +264,13 @@ def main(argv=None):
     #history = parallel_model.fit(x=train_data_x, y=train_data_y, batch_size=FLAGS.batch_size, epochs=FLAGS.max_epochs, verbose=1, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=True)
     history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, steps_per_epoch=train_samples_count/FLAGS.batch_size, callbacks=callbacks, verbose=1)
 
+    file_name = FLAGS.checkpoint_path + '/model-train.h5'
+    east.model.save(file_name, overwrite=True)
+    
+    plot_model(east.model_core, to_file=FLAGS.checkpoint_path + '/east.png', show_shapes=True, show_layer_names=True, expand_nested=True)
     file_name = FLAGS.checkpoint_path + '/model.h5'
-    east.model.save(file_name, overwrite=True, include_optimizer=False)
-    tflite_model = lite.TFLiteConverter.from_keras_model_file(file_name, input_arrays=["input_image"], input_shapes={"input_image":[1, 240, 320, 3]}).convert()
+    east.model_core.save(file_name, overwrite=True, include_optimizer=False)
+    tflite_model = lite.TFLiteConverter.from_keras_model_file(file_name, input_arrays=["input_image"], input_shapes={"input_image":[1, 224, 320, 3]}).convert()
     with open(file_name + '.tflite', 'wb') as tflite_file:
         tflite_file.write(tflite_model)
 

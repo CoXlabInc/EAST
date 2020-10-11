@@ -22,9 +22,6 @@ class EAST_model:
 
     def __init__(self, input_size=512):
         input_image = Input(shape=(None, None, 3), name='input_image')
-        overly_small_text_region_training_mask = Input(shape=(None, None, 1), name='overly_small_text_region_training_mask')
-        text_region_boundary_training_mask = Input(shape=(None, None, 1), name='text_region_boundary_training_mask')
-        target_score_map = Input(shape=(None, None, 1), name='target_score_map')
         resnet = ResNet50(input_tensor=input_image, weights='imagenet', include_top=False, pooling=None)
         x = resnet.get_layer('conv5_block3_out').output
 
@@ -67,9 +64,13 @@ class EAST_model:
         angle_map = Lambda(lambda x: (x - 0.5) * np.pi / 2)(angle_map)
         pred_geo_map = concatenate([rbox_geo_map, angle_map], axis=3, name='pred_geo_map')
 
-        model = Model(inputs=[input_image, overly_small_text_region_training_mask, text_region_boundary_training_mask, target_score_map], outputs=[pred_score_map, pred_geo_map])
+        self.model_core = Model(inputs=input_image, outputs=[pred_score_map, pred_geo_map])
+        
+        overly_small_text_region_training_mask = Input(shape=(None, None, 1), name='overly_small_text_region_training_mask')
+        text_region_boundary_training_mask = Input(shape=(None, None, 1), name='text_region_boundary_training_mask')
+        target_score_map = Input(shape=(None, None, 1), name='target_score_map')
+        self.model = Model(inputs=[self.model_core.input, overly_small_text_region_training_mask, text_region_boundary_training_mask, target_score_map], outputs=self.model_core.output)
 
-        self.model = model
         self.input_image = input_image
         self.overly_small_text_region_training_mask = overly_small_text_region_training_mask
         self.text_region_boundary_training_mask = text_region_boundary_training_mask

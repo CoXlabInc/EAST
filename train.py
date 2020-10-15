@@ -2,6 +2,7 @@ import time
 import os
 import io
 import shutil
+import math
 import numpy as np
 from PIL import Image
 import tensorflow as tf
@@ -244,14 +245,25 @@ def main(argv=None):
     plot_model(east.model, to_file=FLAGS.checkpoint_path + '/east-train.png', show_shapes=True, show_layer_names=True, expand_nested=True)
     plot_model(east.resnet, to_file=FLAGS.checkpoint_path + '/resnet.png', show_shapes=True, show_layer_names=True, expand_nested=True)
 
-    train_data_generator = data_processor.generator(FLAGS)
+    train_data_generator = data_processor.TrainDataSequence(FLAGS)
+    # print(train_data_generator.image_list)
+    # print("#:%d" % (train_data_generator.image_list.shape[0]))
+    # l = math.ceil(train_data_generator.image_list.shape[0] / FLAGS.batch_size)
+    # print("len by batch:%d" %(l))
+
+    # for x in range(l):
+    #     batch_x = train_data_generator.image_list[x * FLAGS.batch_size:(x + 1) * FLAGS.batch_size]
+    #     print(x)
+    #     print(batch_x)
+    # return
+
+    #train_data_generator = data_processor.generator(FLAGS)
     #train_data_x, train_data_y = data_processor.load_train_data(FLAGS)
     #print('# of train data: %d' %(len(train_data_x[0])))
     train_samples_count = data_processor.count_samples(FLAGS)
     print("train_samples_count: %d" % (train_samples_count))
 
     val_data = data_processor.load_data(FLAGS)
-    print("val_data")
 
     lr_scheduler = LearningRateScheduler(lr_decay)
     ckpt = CustomModelCheckpoint(model=east.model, path=FLAGS.checkpoint_path, period=FLAGS.save_checkpoint_epochs, save_weights_only=False)
@@ -260,9 +272,9 @@ def main(argv=None):
     validation_evaluator = ValidationEvaluator(val_data, validation_log_dir=FLAGS.checkpoint_path + '/val')
     callbacks = [lr_scheduler, ckpt, small_text_weight_callback, validation_evaluator]
 
-
     #history = parallel_model.fit(x=train_data_x, y=train_data_y, batch_size=FLAGS.batch_size, epochs=FLAGS.max_epochs, verbose=1, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=True)
-    history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, steps_per_epoch=train_samples_count/FLAGS.batch_size, callbacks=callbacks, verbose=1)
+    #history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, steps_per_epoch=train_samples_count/FLAGS.batch_size, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=True, verbose=1)
+    history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=True, verbose=1)
 
     file_name = FLAGS.checkpoint_path + '/model-train.h5'
     east.model.save(file_name, overwrite=True)

@@ -7,6 +7,7 @@ import time
 import os
 import argparse
 import itertools
+import math
 from multiprocessing import Pool
 import threading
 import numpy as np
@@ -16,6 +17,7 @@ import matplotlib.patches as Patches
 from shapely.geometry import Polygon
 
 import tensorflow as tf
+from tensorflow.keras.utils import Sequence
 
 def get_images(data_path):
     files = []
@@ -615,145 +617,122 @@ def resize_image(img, text_polys, input_size, shift_h, shift_w):
     text_polys[:, :, 1] *= resize_ratio_3_y
     return img, text_polys
 
-class threadsafe_iter:
-    """Takes an iterator/generator and makes it thread-safe by
-    serializing call to the `next` method of given iterator/generator.
-    """
-    def __init__(self, it):
-        self.it = it
-        self.lock = threading.Lock()
+class TrainDataSequence(Sequence):
+    def __init__(self, FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=None, random_scale=np.array([0.5, 1, 2.0, 3.0]), vis=False):
+        images = get_images(FLAGS.training_data_path)
+        for im_fn in images:
+            txt_fn = get_text_file(im_fn)
+            if not os.path.exists(txt_fn):
+                if not FLAGS.suppress_warnings_and_error_messages:
+                    print('text file {} does not exists'.format(txt_fn))
+                images.remove(im_fn)
+            
+        self.image_list = np.array(images)
+        self.FLAGS = FLAGS
+        self.input_size = input_size
+        self.background_ratio=background_ratio
+        self.is_train = is_train
+        self.random_scale = random_scale
+        self.vis = vis
 
-    def __iter__(self):
-        return self
+    def __len__(self):
+        return math.ceil(len(self.image_list) / self.FLAGS.batch_size)
 
-    def __next__(self): # Python 3
-        with self.lock:
-            return next(self.it)
+    def __getitem__(self, idx):
+        batch_x = self.image_list[idx * self.FLAGS.batch_size:(idx + 1) * self.FLAGS.batch_size]
 
-    def next(self): # Python 2
-        with self.lock:
-            return self.it.next()
+        images = []
+        score_maps = []
+        geo_maps = []
+        overly_small_text_region_training_masks = []
+        text_region_boundary_training_masks = []
 
-def threadsafe_generator(f):
-    """A decorator that takes a generator function and makes it thread-safe.
-    """
-    def g(*a, **kw):
-        return threadsafe_iter(f(*a, **kw))
-    return g
+        for im_fn in batch_x:
+            try:
+                im = cv2.imread(im_fn)
+                h, w, _ = im.shape
+                txt_fn = get_text_file(im_fn)
 
-def load_train_data_process(args):
-    (image_file, FLAGS, is_train) = args
-    background_ratio=3./8
-    random_scale=np.array([0.5, 1, 2.0, 3.0])
-    vis = False
-    input_size=512
-    
-    try:
-        im = cv2.imread(image_file)
-        h, w, _ = im.shape
-        txt_file = get_text_file(image_file)
-        if not os.path.exists(txt_file):
-            print('text file {} does not exists'.format(txt_file))
-            return None
+                text_polys, text_tags = load_annotation(txt_fn)
+                text_polys, text_tags = check_and_validate_polys(self.FLAGS, text_polys, text_tags, (h, w))
 
-        text_polys, text_tags = load_annotation(txt_file)
-        text_polys, text_tags = check_and_validate_polys(FLAGS, text_polys, text_tags, (h, w))
+                # random scale this image
+                rd_scale = np.random.choice(self.random_scale)                
+                x_scale_variation = np.random.randint(-10, 10) / 100.
+                y_scale_variation = np.random.randint(-10, 10) / 100.
+                im = cv2.resize(im, dsize=None, fx=rd_scale + x_scale_variation, fy=rd_scale + y_scale_variation)
+                text_polys[:, :, 0] *= rd_scale + x_scale_variation
+                text_polys[:, :, 1] *= rd_scale + y_scale_variation
 
-        # random scale this image
-        rd_scale = np.random.choice(random_scale)                
-        x_scale_variation = np.random.randint(-10, 10) / 100.
-        y_scale_variation = np.random.randint(-10, 10) / 100.
-        im = cv2.resize(im, dsize=None, fx=rd_scale + x_scale_variation, fy=rd_scale + y_scale_variation)
-        text_polys[:, :, 0] *= rd_scale + x_scale_variation
-        text_polys[:, :, 1] *= rd_scale + y_scale_variation
+                # random crop a area from image
+                if np.random.rand() < self.background_ratio:
+                    # print("train data [%u]-2-1" % (i))
+                    # crop background
+                    while True:
+                        im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=True)
+                        if text_polys.shape[0] <= 0:
+                            break
+                    # pad and resize image
+                    im, _, _ = pad_image(im, self.FLAGS.input_size, self.is_train)
+                    im = cv2.resize(im, dsize=(self.input_size, self.input_size))
+                    score_map = np.zeros((self.input_size, self.input_size), dtype=np.uint8)
+                    geo_map_channels = 5 if self.FLAGS.geometry == 'RBOX' else 8
+                    geo_map = np.zeros((self.input_size, self.input_size, geo_map_channels), dtype=np.float32)
+                    overly_small_text_region_training_mask = np.ones((self.input_size, self.input_size), dtype=np.uint8)
+                    text_region_boundary_training_mask = np.ones((self.input_size, self.input_size), dtype=np.uint8)
+                else:
+                    while True:
+                        im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=False)
+                        if text_polys.shape[0] != 0:
+                            break
+                    h, w, _ = im.shape
+                    im, shift_h, shift_w = pad_image(im, self.FLAGS.input_size, self.is_train)
+                    im, text_polys = resize_image(im, text_polys, self.FLAGS.input_size, shift_h, shift_w)
+                    new_h, new_w, _ = im.shape
+                    score_map, geo_map, overly_small_text_region_training_mask, text_region_boundary_training_mask = generate_rbox(self.FLAGS, (new_h, new_w), text_polys, text_tags)
 
-        # random crop a area from image
-        r = np.random.rand()
-        if r < background_ratio:
-            # crop background
-            im, text_polys, text_tags = crop_area(FLAGS, im, text_polys, text_tags, crop_background=True)
-            if text_polys.shape[0] > 0:
-                return None
-            # pad and resize image
-            im, _, _ = pad_image(im, FLAGS.input_size, is_train)
-            im = cv2.resize(im, dsize=(input_size, input_size))
-            score_map = np.zeros((input_size, input_size), dtype=np.uint8)
-            geo_map_channels = 5 if FLAGS.geometry == 'RBOX' else 8
-            geo_map = np.zeros((input_size, input_size, geo_map_channels), dtype=np.float32)
-            overly_small_text_region_training_mask = np.ones((input_size, input_size), dtype=np.uint8)
-            text_region_boundary_training_mask = np.ones((input_size, input_size), dtype=np.uint8)
-        else:
-            im, text_polys, text_tags = crop_area(FLAGS, im, text_polys, text_tags, crop_background=False)
-            if text_polys.shape[0] == 0:
-                return None
-            h, w, _ = im.shape
-            im, shift_h, shift_w = pad_image(im, FLAGS.input_size, is_train)
-            im, text_polys = resize_image(im, text_polys, FLAGS.input_size, shift_h, shift_w)
-            new_h, new_w, _ = im.shape
-            score_map, geo_map, overly_small_text_region_training_mask, text_region_boundary_training_mask = generate_rbox(FLAGS, (new_h, new_w), text_polys, text_tags)
+                if self.vis:
+                    fig, axs = plt.subplots(3, 2, figsize=(20, 30))
+                    axs[0, 0].imshow(im[:, :, ::-1])
+                    axs[0, 0].set_xticks([])
+                    axs[0, 0].set_yticks([])
+                    for poly in text_polys:
+                        poly_h = min(abs(poly[3, 1] - poly[0, 1]), abs(poly[2, 1] - poly[1, 1]))
+                        poly_w = min(abs(poly[1, 0] - poly[0, 0]), abs(poly[2, 0] - poly[3, 0]))
+                        axs[0, 0].add_artist(Patches.Polygon(
+                            poly, facecolor='none', edgecolor='green', linewidth=2, linestyle='-', fill=True))
+                        axs[0, 0].text(poly[0, 0], poly[0, 1], '{:.0f}-{:.0f}'.format(poly_h, poly_w), color='purple')
+                    axs[0, 1].imshow(score_map[::, ::])
+                    axs[0, 1].set_xticks([])
+                    axs[0, 1].set_yticks([])
+                    axs[1, 0].imshow(geo_map[::, ::, 0])
+                    axs[1, 0].set_xticks([])
+                    axs[1, 0].set_yticks([])
+                    axs[1, 1].imshow(geo_map[::, ::, 1])
+                    axs[1, 1].set_xticks([])
+                    axs[1, 1].set_yticks([])
+                    axs[2, 0].imshow(geo_map[::, ::, 2])
+                    axs[2, 0].set_xticks([])
+                    axs[2, 0].set_yticks([])
+                    axs[2, 1].imshow(training_mask[::, ::])
+                    axs[2, 1].set_xticks([])
+                    axs[2, 1].set_yticks([])
+                    plt.tight_layout()
+                    plt.show()
+                    plt.close()
 
-        if vis:
-            fig, axs = plt.subplots(3, 2, figsize=(20, 30))
-            axs[0, 0].imshow(im[:, :, ::-1])
-            axs[0, 0].set_xticks([])
-            axs[0, 0].set_yticks([])
-            for poly in text_polys:
-                poly_h = min(abs(poly[3, 1] - poly[0, 1]), abs(poly[2, 1] - poly[1, 1]))
-                poly_w = min(abs(poly[1, 0] - poly[0, 0]), abs(poly[2, 0] - poly[3, 0]))
-                axs[0, 0].add_artist(Patches.Polygon(
-                    poly, facecolor='none', edgecolor='green', linewidth=2, linestyle='-', fill=True))
-                axs[0, 0].text(poly[0, 0], poly[0, 1], '{:.0f}-{:.0f}'.format(poly_h, poly_w), color='purple')
-            axs[0, 1].imshow(score_map[::, ::])
-            axs[0, 1].set_xticks([])
-            axs[0, 1].set_yticks([])
-            axs[1, 0].imshow(geo_map[::, ::, 0])
-            axs[1, 0].set_xticks([])
-            axs[1, 0].set_yticks([])
-            axs[1, 1].imshow(geo_map[::, ::, 1])
-            axs[1, 1].set_xticks([])
-            axs[1, 1].set_yticks([])
-            axs[2, 0].imshow(geo_map[::, ::, 2])
-            axs[2, 0].set_xticks([])
-            axs[2, 0].set_yticks([])
-            axs[2, 1].imshow(training_mask[::, ::])
-            axs[2, 1].set_xticks([])
-            axs[2, 1].set_yticks([])
-            plt.tight_layout()
-            plt.show()
-            plt.close()
-
-        im = (im / 127.5) - 1.
-        return [ im[:, :, ::-1].astype(np.float32), image_file, score_map[::4, ::4, np.newaxis].astype(np.float32), geo_map[::4, ::4, :].astype(np.float32), overly_small_text_region_training_mask[::4, ::4, np.newaxis].astype(np.float32), text_region_boundary_training_mask[::4, ::4, np.newaxis].astype(np.float32) ]
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-
-def load_train_data(FLAGS, is_train=True):
-    image_files = np.array(get_images(FLAGS.training_data_path))
-    images = []
-    score_maps = []
-    geo_maps = []
-    overly_small_text_region_training_masks = []
-    text_region_boundary_training_masks = []
-
-    pool = Pool(FLAGS.nb_workers)
-    if sys.version_info >= (3, 0):
-        loaded_data = pool.map_async(load_train_data_process, zip(image_files, itertools.repeat(FLAGS), itertools.repeat(is_train))).get(9999999)
-    else:
-        loaded_data = pool.map_async(load_train_data_process, itertools.izip(image_files, itertools.repeat(FLAGS), itertools. repeat(is_train))).get(999999)
-    pool.close()
-    pool.join()
-
-    images = [item[0] for item in loaded_data if not item is None]
-    image_fns = [item[1] for item in loaded_data if not item is None]
-    score_maps = [item[2] for item in loaded_data if not item is None]
-    geo_maps = [item[3] for item in loaded_data if not item is None]
-    overly_small_text_region_training_masks = [item[4] for item in loaded_data if not item is None]
-    text_region_boundary_training_masks = [item[5] for item in loaded_data if not item is None]
-    print('Number of training images : %d' % len(images))
-
-    return [ np.array(images), np.array(overly_small_text_region_training_masks), np.array(text_region_boundary_training_masks), np.array(score_maps) ], [ np.array(score_maps), np.array(geo_maps) ]
+                im = (im / 127.5) - 1.
+                images.append(im[:, :, ::-1].astype(np.float32))
+                score_maps.append(score_map[::4, ::4, np.newaxis].astype(np.float32))
+                geo_maps.append(geo_map[::4, ::4, :].astype(np.float32))
+                overly_small_text_region_training_masks.append(overly_small_text_region_training_mask[::4, ::4, np.newaxis].astype(np.float32))
+                text_region_boundary_training_masks.append(text_region_boundary_training_mask[::4, ::4, np.newaxis].astype(np.float32))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                continue
+                
+        return [np.array(images), np.array(overly_small_text_region_training_masks), np.array(text_region_boundary_training_masks), np.array(score_maps)], [np.array(score_maps), np.array(geo_maps)]
 
 def generator(FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=None, random_scale=np.array([0.5, 1, 2.0, 3.0]), vis=False):
     image_list = np.array(get_images(FLAGS.training_data_path))

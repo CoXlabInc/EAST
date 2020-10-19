@@ -639,16 +639,18 @@ class TrainDataSequence(Sequence):
         return math.ceil(len(self.image_list) / self.FLAGS.batch_size)
 
     def __getitem__(self, idx):
-        batch_x = self.image_list[idx * self.FLAGS.batch_size:(idx + 1) * self.FLAGS.batch_size]
-
         images = []
         score_maps = []
         geo_maps = []
         overly_small_text_region_training_masks = []
         text_region_boundary_training_masks = []
 
-        for im_fn in batch_x:
+        i = idx * self.FLAGS.batch_size
+        while True:
             try:
+                im_fn = self.image_list[i]
+                i = i + 1
+                #print("[%u] train data [%s]-0" % (os.getpid(), im_fn))
                 im = cv2.imread(im_fn)
                 h, w, _ = im.shape
                 txt_fn = get_text_file(im_fn)
@@ -666,12 +668,12 @@ class TrainDataSequence(Sequence):
 
                 # random crop a area from image
                 if np.random.rand() < self.background_ratio:
-                    # print("train data [%u]-2-1" % (i))
+                    #print("[%u] train data [%s]-1" % (os.getpid(), im_fn))
                     # crop background
-                    while True:
-                        im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=True)
-                        if text_polys.shape[0] <= 0:
-                            break
+                    im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=True)
+                    if text_polys.shape[0] <= 0:
+                        i = i - 1
+                        continue
                     # pad and resize image
                     im, _, _ = pad_image(im, self.FLAGS.input_size, self.is_train)
                     im = cv2.resize(im, dsize=(self.input_size, self.input_size))
@@ -681,10 +683,11 @@ class TrainDataSequence(Sequence):
                     overly_small_text_region_training_mask = np.ones((self.input_size, self.input_size), dtype=np.uint8)
                     text_region_boundary_training_mask = np.ones((self.input_size, self.input_size), dtype=np.uint8)
                 else:
-                    while True:
-                        im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=False)
-                        if text_polys.shape[0] != 0:
-                            break
+                    #print("[%u] train data [%s]-2" % (os.getpid(), im_fn))
+                    im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=False)
+                    if text_polys.shape[0] != 0:
+                        i = i - 1
+                        continue
                     h, w, _ = im.shape
                     im, shift_h, shift_w = pad_image(im, self.FLAGS.input_size, self.is_train)
                     im, text_polys = resize_image(im, text_polys, self.FLAGS.input_size, shift_h, shift_w)
@@ -727,11 +730,16 @@ class TrainDataSequence(Sequence):
                 geo_maps.append(geo_map[::4, ::4, :].astype(np.float32))
                 overly_small_text_region_training_masks.append(overly_small_text_region_training_mask[::4, ::4, np.newaxis].astype(np.float32))
                 text_region_boundary_training_masks.append(text_region_boundary_training_mask[::4, ::4, np.newaxis].astype(np.float32))
+                #print("[%u] train data [%s]-3" % (os.getpid(), im_fn))
+
+                if (len(images) == self.FLAGS.batch_size or i == len(self.image_list)):
+                    break
+ 
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                continue
-                
+                break
+
         return [np.array(images), np.array(overly_small_text_region_training_masks), np.array(text_region_boundary_training_masks), np.array(score_maps)], [np.array(score_maps), np.array(geo_maps)]
 
 def generator(FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=None, random_scale=np.array([0.5, 1, 2.0, 3.0]), vis=False):

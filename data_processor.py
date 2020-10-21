@@ -730,8 +730,6 @@ class TrainDataSequence(Sequence):
                 geo_maps.append(geo_map[::4, ::4, :].astype(np.float32))
                 overly_small_text_region_training_masks.append(overly_small_text_region_training_mask[::4, ::4, np.newaxis].astype(np.float32))
                 text_region_boundary_training_masks.append(text_region_boundary_training_mask[::4, ::4, np.newaxis].astype(np.float32))
-                #print("[%u] train data [%s]-3" % (os.getpid(), im_fn))
-
                 if (len(images) == self.FLAGS.batch_size or i == len(self.image_list)):
                     break
  

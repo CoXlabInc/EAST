@@ -264,7 +264,7 @@ def main(argv=None):
     #callbacks = [lr_scheduler, ckpt, small_text_weight_callback]
 
     #history = parallel_model.fit(x=train_data_x, y=train_data_y, batch_size=FLAGS.batch_size, epochs=FLAGS.max_epochs, verbose=1, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=True)
-    #history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, steps_per_epoch=train_samples_count/FLAGS.batch_size, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=True, verbose=1)
+    #history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, steps_per_epoch=train_samples_count/FLAGS.batch_size, callbacks=callbacks, max_queue_size=10, verbose=1)
     history = parallel_model.fit(x=train_data_generator, epochs=FLAGS.max_epochs, callbacks=callbacks, max_queue_size=10, workers=FLAGS.nb_workers, use_multiprocessing=False, verbose=1)
 
     file_name = FLAGS.checkpoint_path + '/model-train.h5'

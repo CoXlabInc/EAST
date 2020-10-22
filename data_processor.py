@@ -671,8 +671,7 @@ class TrainDataSequence(Sequence):
                     #print("[%u] train data [%s]-1" % (os.getpid(), im_fn))
                     # crop background
                     im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=True)
-                    if text_polys.shape[0] <= 0:
-                        i = i - 1
+                    if text_polys.shape[0] > 0:
                         continue
                     # pad and resize image
                     im, _, _ = pad_image(im, self.FLAGS.input_size, self.is_train)
@@ -685,8 +684,7 @@ class TrainDataSequence(Sequence):
                 else:
                     #print("[%u] train data [%s]-2" % (os.getpid(), im_fn))
                     im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=False)
-                    if text_polys.shape[0] != 0:
-                        i = i - 1
+                    if text_polys.shape[0] == 0:
                         continue
                     h, w, _ = im.shape
                     im, shift_h, shift_w = pad_image(im, self.FLAGS.input_size, self.is_train)

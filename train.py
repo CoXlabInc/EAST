@@ -243,7 +243,7 @@ def main(argv=None):
     with open(FLAGS.checkpoint_path + '/model.json', 'w') as json_file:
         json_file.write(model_json)
     plot_model(east.model, to_file=FLAGS.checkpoint_path + '/east-train.png', show_shapes=True, show_layer_names=True, expand_nested=True)
-    plot_model(east.resnet, to_file=FLAGS.checkpoint_path + '/resnet.png', show_shapes=True, show_layer_names=True, expand_nested=True)
+    plot_model(east.backbone, to_file=FLAGS.checkpoint_path + '/backbone.png', show_shapes=True, show_layer_names=True, expand_nested=True)
 
     train_data_generator = data_processor.TrainDataSequence(FLAGS)
     #train_data_generator = data_processor.generator(FLAGS)

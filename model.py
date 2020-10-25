@@ -1,6 +1,6 @@
-from tensorflow.keras.applications.resnet50 import ResNet50
+from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Conv2D, concatenate, BatchNormalization, Lambda, Input, multiply, add, ZeroPadding2D, Activation, Layer, MaxPooling2D, Dropout
+from tensorflow.keras.layers import Conv2D, concatenate, BatchNormalization, Lambda, Input, ZeroPadding2D, Activation, Layer, Reshape
 from tensorflow.keras import regularizers
 import tensorflow.keras.backend as K
 import tensorflow as tf
@@ -21,12 +21,12 @@ def resize_output_shape(input_shape):
 class EAST_model:
 
     def __init__(self, input_size=512):
-        input_image = Input(shape=(None, None, 3), name='input_image')
-        resnet = ResNet50(input_tensor=input_image, weights='imagenet', include_top=False, pooling=None)
-        x = resnet.get_layer('conv5_block3_out').output
-
-        x = Lambda(resize_bilinear, name='resize_1')(x)
-        x = concatenate([x, resnet.get_layer('conv4_block6_out').output], axis=3, name='concatA')
+        input_image = Input(shape=(224, 224, 3), name='input_image')
+        backbone = MobileNetV2(input_shape=(224, 224, 3), alpha=1.0, input_tensor=input_image, weights='pretrained/mobilenet_v2_weights_tf_dim_ordering_tf_kernels_1.0_224_no_top.h5', include_top=False, pooling=None)
+        x = backbone.get_layer('block_15_add').output
+        
+        x = Reshape((14, 14, 160))(Lambda(resize_bilinear, name='resize_1')(x))
+        x = concatenate([x, backbone.get_layer('block_12_add').output], axis=3, name='concatA')
         x = Conv2D(128, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
@@ -34,8 +34,8 @@ class EAST_model:
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
 
-        x = Lambda(resize_bilinear, name='resize_2')(x)
-        x = concatenate([x, resnet.get_layer('conv3_block4_out').output], axis=3, name='concatB')
+        x = Reshape((28, 28, 32))(Lambda(resize_bilinear, name='resize_2')(x))
+        x = concatenate([x, backbone.get_layer('block_5_add').output], axis=3, name='concatB')
         x = Conv2D(64, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
@@ -43,9 +43,9 @@ class EAST_model:
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
 
-        x = Lambda(resize_bilinear, name='resize_3')(x)
-        #x = concatenate([x, ZeroPadding2D(((1, 0),(1, 0)))(resnet.get_layer('conv2_block3_out').output)], axis=3, name='concatC')
-        x = concatenate([x, resnet.get_layer('conv2_block3_out').output], axis=3, name='concatC')
+        x = Reshape((56, 56, 24))(Lambda(resize_bilinear, name='resize_3')(x))
+        #x = concatenate([x, ZeroPadding2D(((1, 0),(1, 0)))(backbone.get_layer('block_2_add').output)], axis=3, name='concatC')
+        x = concatenate([x, backbone.get_layer('block_2_add').output], axis=3, name='concatC')
         x = Conv2D(32, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
@@ -77,4 +77,4 @@ class EAST_model:
         self.target_score_map = target_score_map
         self.pred_score_map = pred_score_map
         self.pred_geo_map = pred_geo_map
-        self.resnet = resnet
+        self.backbone = backbone

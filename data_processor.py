@@ -648,7 +648,7 @@ class TrainDataSequence(Sequence):
         while True:
             try:
                 im_fn = self.image_list[i]
-                i = i + 1
+                i += 1
                 #print("[%u] train data [%s]-0" % (os.getpid(), im_fn))
                 im = cv2.imread(im_fn)
                 h, w, _ = im.shape
@@ -671,6 +671,7 @@ class TrainDataSequence(Sequence):
                     # crop background
                     im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=True)
                     if text_polys.shape[0] > 0:
+                        i -= 1
                         continue
                     # pad and resize image
                     im, _, _ = pad_image(im, self.FLAGS.input_size, self.is_train)
@@ -684,6 +685,7 @@ class TrainDataSequence(Sequence):
                     #print("[%u] train data [%s]-2" % (os.getpid(), im_fn))
                     im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=False)
                     if text_polys.shape[0] == 0:
+                        i -= 1
                         continue
                     h, w, _ = im.shape
                     im, shift_h, shift_w = pad_image(im, self.FLAGS.input_size, self.is_train)

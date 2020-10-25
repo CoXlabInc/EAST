@@ -1,3 +1,4 @@
+import os
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Conv2D, concatenate, BatchNormalization, Lambda, Input, ZeroPadding2D, Activation, Layer, Reshape
@@ -44,7 +45,11 @@ class EAST_model:
 
     def __init__(self, input_size=512):
         input_image = Input(shape=(224, 224, 3), name='input_image')
-        backbone = MobileNetV2(input_shape=(224, 224, 3), alpha=1.0, input_tensor=input_image, weights='pretrained/mobilenet_v2_weights_tf_dim_ordering_tf_kernels_1.0_224_no_top.h5', include_top=False, pooling=None)
+        weights = 'pretrained/mobilenet_v2_weights_tf_dim_ordering_tf_kernels_1.0_224_no_top.h5'
+        if not os.path.exists(weights):
+            weights = 'imagenet'
+        backbone = MobileNetV2(input_shape=(224, 224, 3), alpha=1.0, input_tensor=input_image, weights=weights, include_top=False, pooling=None)
+
         x = backbone.get_layer('block_15_add').output
 
         x = ResizeImages(output_dim=(14, 14))(x)

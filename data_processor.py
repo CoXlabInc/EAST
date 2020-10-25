@@ -618,7 +618,7 @@ def resize_image(img, text_polys, input_size, shift_h, shift_w):
     return img, text_polys
 
 class TrainDataSequence(Sequence):
-    def __init__(self, FLAGS, input_size=512, background_ratio=3./8, is_train=True, idx=None, random_scale=np.array([0.5, 1, 2.0, 3.0]), vis=False):
+    def __init__(self, FLAGS, background_ratio=3./8, is_train=True, idx=None, random_scale=np.array([0.5, 1, 2.0, 3.0]), vis=False):
         images = get_images(FLAGS.training_data_path)
         for im_fn in images:
             txt_fn = get_text_file(im_fn)
@@ -629,7 +629,6 @@ class TrainDataSequence(Sequence):
             
         self.image_list = np.array(images)
         self.FLAGS = FLAGS
-        self.input_size = input_size
         self.background_ratio=background_ratio
         self.is_train = is_train
         self.random_scale = random_scale
@@ -675,12 +674,12 @@ class TrainDataSequence(Sequence):
                         continue
                     # pad and resize image
                     im, _, _ = pad_image(im, self.FLAGS.input_size, self.is_train)
-                    im = cv2.resize(im, dsize=(self.input_size, self.input_size))
-                    score_map = np.zeros((self.input_size, self.input_size), dtype=np.uint8)
+                    im = cv2.resize(im, dsize=(self.FLAGS.input_size, self.FLAGS.input_size))
+                    score_map = np.zeros((self.FLAGS.input_size, self.FLAGS.input_size), dtype=np.uint8)
                     geo_map_channels = 5 if self.FLAGS.geometry == 'RBOX' else 8
-                    geo_map = np.zeros((self.input_size, self.input_size, geo_map_channels), dtype=np.float32)
-                    overly_small_text_region_training_mask = np.ones((self.input_size, self.input_size), dtype=np.uint8)
-                    text_region_boundary_training_mask = np.ones((self.input_size, self.input_size), dtype=np.uint8)
+                    geo_map = np.zeros((self.FLAGS.input_size, self.FLAGS.input_size, geo_map_channels), dtype=np.float32)
+                    overly_small_text_region_training_mask = np.ones((self.FLAGS.input_size, self.FLAGS.input_size), dtype=np.uint8)
+                    text_region_boundary_training_mask = np.ones((self.FLAGS.input_size, self.FLAGS.input_size), dtype=np.uint8)
                 else:
                     #print("[%u] train data [%s]-2" % (os.getpid(), im_fn))
                     im, text_polys, text_tags = crop_area(self.FLAGS, im, text_polys, text_tags, crop_background=False)

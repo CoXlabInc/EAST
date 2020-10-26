@@ -7,52 +7,23 @@ import tensorflow.keras.backend as K
 from tensorflow.layers import InputSpec
 import tensorflow as tf
 import numpy as np
-
-RESIZE_FACTOR = 2
-
-class ResizeImages(Layer):
-    def __init__(self, output_dim=(1, 1), **kwargs):
-        super(ResizeImages, self).__init__(**kwargs)
-        self.output_dim = output_dim
-        self.input_spec = InputSpec(ndim=4)
-
-    def build(self, input_shape):
-        self.input_spec = [InputSpec(shape=input_shape)]
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], self.output_dim[0], self.output_dim[1], input_shape[3])
-
-    def call(self, inputs):
-        output = tf.image.resize_bilinear(inputs, size=self.output_dim)
-        return output
-
-    def get_config(self):
-        config = {'output_dim': self.output_dim}
-        base_config = super(ResizeImages, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-def resize_bilinear(x):
-    return tf.image.resize_bilinear(x, size=[K.shape(x)[1]*RESIZE_FACTOR, K.shape(x)[2]*RESIZE_FACTOR])
-
-def resize_output_shape(input_shape):
-    shape = list(input_shape)
-    assert len(shape) == 4
-    shape[1] *= RESIZE_FACTOR
-    shape[2] *= RESIZE_FACTOR
-    return tuple(shape)
+from custom_layer import ResizeImages
 
 class EAST_model:
 
-    def __init__(self, input_size=512):
-        input_image = Input(shape=(224, 224, 3), name='input_image')
+    def __init__(self):
+        input_size = 224
+        input_image = Input(shape=(input_size, input_size, 3), name='input_image')
         weights = 'pretrained/mobilenet_v2_weights_tf_dim_ordering_tf_kernels_1.0_224_no_top.h5'
         if not os.path.exists(weights):
             weights = 'imagenet'
-        backbone = MobileNetV2(input_shape=(224, 224, 3), alpha=1.0, input_tensor=input_image, weights=weights, include_top=False, pooling=None)
+        backbone = MobileNetV2(input_shape=(input_size, input_size, 3), alpha=0.75, input_tensor=input_image, weights=weights, include_top=False, pooling=None)
 
         x = backbone.get_layer('block_15_add').output
 
-        x = ResizeImages(output_dim=(14, 14))(x)
+        shape = x.shape.as_list()
+        x = ResizeImages(output_dim=(shape[1] * 2, shape[2] * 2))(x)
+        
         x = concatenate([x, backbone.get_layer('block_12_add').output], axis=3, name='concatA')
         x = Conv2D(128, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
@@ -61,7 +32,9 @@ class EAST_model:
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
 
-        x = ResizeImages(output_dim=(28, 28))(x)
+        shape = x.shape.as_list()
+        x = ResizeImages(output_dim=(shape[1] * 2, shape[2] * 2))(x)
+        
         x = concatenate([x, backbone.get_layer('block_5_add').output], axis=3, name='concatB')
         x = Conv2D(64, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
@@ -70,7 +43,9 @@ class EAST_model:
         x = BatchNormalization(momentum=0.997, epsilon=1e-5, scale=True)(x)
         x = Activation('relu')(x)
 
-        x = ResizeImages(output_dim=(56, 56))(x)
+        shape = x.shape.as_list()
+        x = ResizeImages(output_dim=(shape[1] * 2, shape[2] * 2))(x)
+        
         #x = concatenate([x, ZeroPadding2D(((1, 0),(1, 0)))(backbone.get_layer('block_2_add').output)], axis=3, name='concatC')
         x = concatenate([x, backbone.get_layer('block_2_add').output], axis=3, name='concatC')
         x = Conv2D(32, (1, 1), padding='same', kernel_regularizer=regularizers.l2(1e-5))(x)

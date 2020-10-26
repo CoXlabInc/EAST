@@ -216,12 +216,12 @@ def main(argv=None):
 
     if len(gpus) <= 1:
         print('Training with 1 GPU')
-        east = EAST_model(FLAGS.input_size)
+        east = EAST_model()
         parallel_model = east.model
     else:
         print('Training with %d GPUs' % len(gpus))
         with tf.device("/cpu:0"):
-            east = EAST_model(FLAGS.input_size)
+            east = EAST_model()
         if FLAGS.restore_model is not '':
             east.model.load_weights(FLAGS.restore_model)
         parallel_model = multi_gpu_model(east.model, gpus=len(gpus))

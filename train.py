@@ -145,11 +145,9 @@ class ValidationEvaluator(Callback):
         self.validation_data = validation_data
         self.validation_log_dir = validation_log_dir
         self.val_writer = tf.summary.FileWriter(self.validation_log_dir)
-        print('len(self.validation_data): %d' % (len(self.validation_data)))
 
     def on_epoch_end(self, epoch, logs={}):
         if (epoch + 1) % self.period == 0:
-            print('len(self.validation_data): %d' % (len(self.validation_data)))
             val_loss, val_score_map_loss, val_geo_map_loss = self.model.evaluate([self.validation_data[0], self.validation_data[1], self.validation_data[2], self.validation_data[3]],
                                                                                  [self.validation_data[3], self.validation_data[4]],
                                                                                  batch_size=FLAGS.batch_size)

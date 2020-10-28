@@ -11,12 +11,16 @@ from custom_layer import ResizeImages
 
 class EAST_model:
 
-    def __init__(self):
+    def __init__(self, restore=''):
         input_size = 224
         input_image = Input(shape=(input_size, input_size, 3), name='input_image')
-        weights = 'pretrained/mobilenet_v2_weights_tf_dim_ordering_tf_kernels_1.0_224_no_top.h5'
-        if not os.path.exists(weights):
-            weights = 'imagenet'
+
+        weights = None
+        if (restore is ''):
+            weights = 'pretrained/mobilenet_v2_weights_tf_dim_ordering_tf_kernels_1.0_224_no_top.h5'
+            if not os.path.exists(weights):
+                weights = 'imagenet'
+                
         backbone = MobileNetV2(input_shape=(input_size, input_size, 3), alpha=0.75, input_tensor=input_image, weights=weights, include_top=False, pooling=None)
 
         x = backbone.get_layer('block_15_add').output
@@ -80,3 +84,6 @@ class EAST_model:
         self.pred_score_map = pred_score_map
         self.pred_geo_map = pred_geo_map
         self.backbone = backbone
+
+        if (restore is not ''):
+            self.model.load_weights(restore)

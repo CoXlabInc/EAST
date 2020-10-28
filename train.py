@@ -20,6 +20,7 @@ from adamw import AdamW
 from model import EAST_model
 from losses import dice_loss, rbox_loss
 import data_processor
+from custom_layer import ResizeImages
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input_size', type=int, default=512) # input size for training of the network
@@ -216,14 +217,12 @@ def main(argv=None):
 
     if len(gpus) <= 1:
         print('Training with 1 GPU')
-        east = EAST_model()
+        east = EAST_model(FLAGS.restore_model)
         parallel_model = east.model
     else:
         print('Training with %d GPUs' % len(gpus))
         with tf.device("/cpu:0"):
-            east = EAST_model()
-        if FLAGS.restore_model is not '':
-            east.model.load_weights(FLAGS.restore_model)
+            east = EAST_model(FLAGS.restore_model)
         parallel_model = multi_gpu_model(east.model, gpus=len(gpus))
 
     score_map_loss_weight = K.variable(0.01, name='score_map_loss_weight')
@@ -273,7 +272,10 @@ def main(argv=None):
     plot_model(east.model_core, to_file=FLAGS.checkpoint_path + '/east.png', show_shapes=True, show_layer_names=True, expand_nested=True)
     file_name = FLAGS.checkpoint_path + '/model.h5'
     east.model_core.save(file_name, overwrite=True, include_optimizer=False)
-    tflite_model = lite.TFLiteConverter.from_keras_model_file(file_name, input_arrays=["input_image"], input_shapes={"input_image":[1, 224, 320, 3]}).convert()
+    tflite_model = lite.TFLiteConverter.from_keras_model_file(file_name,
+                                                              input_arrays=["input_image"],
+                                                              input_shapes={"input_image":[1, 224, 224, 3]},
+                                                              custom_objects={"ResizeImages":ResizeImages}).convert()
     with open(file_name + '.tflite', 'wb') as tflite_file:
         tflite_file.write(tflite_model)
 

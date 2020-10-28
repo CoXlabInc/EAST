@@ -5,10 +5,15 @@ import os
 import argparse
 import numpy as np
 import tensorflow as tf
-from keras.models import load_model, model_from_json
+from tensorflow.keras.models import load_model
 
 import locality_aware_nms as nms_locality
 import lanms
+from custom_layer import ResizeImages
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+session = tf.Session(config=config)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--test_data_path', type=str, default='../data/ICDAR2015/test_data')
@@ -38,7 +43,7 @@ def get_images():
     return files
 
 
-def resize_image(im, max_side_len=2400):
+def resize_image(im, size=None, max_side_len=2400):
     '''
     resize image to a size multiple of 32 which is required by the network
     :param im: the resized image
@@ -47,19 +52,24 @@ def resize_image(im, max_side_len=2400):
     '''
     h, w, _ = im.shape
 
-    resize_w = w
-    resize_h = h
-
-    # limit the max side
-    if max(resize_h, resize_w) > max_side_len:
-        ratio = float(max_side_len) / resize_h if resize_h > resize_w else float(max_side_len) / resize_w
+    if (size is not None):
+        resize_h = size[0]
+        resize_w = size[1]
     else:
-        ratio = 1.
-    resize_h = int(resize_h * ratio)
-    resize_w = int(resize_w * ratio)
+        resize_w = w
+        resize_h = h
 
-    resize_h = resize_h if resize_h % 32 == 0 else (resize_h // 32) * 32
-    resize_w = resize_w if resize_w % 32 == 0 else (resize_w // 32) * 32
+        # limit the max side
+        if max(resize_h, resize_w) > max_side_len:
+            ratio = float(max_side_len) / resize_h if resize_h > resize_w else float(max_side_len) / resize_w
+        else:
+            ratio = 1.
+            resize_h = int(resize_h * ratio)
+            resize_w = int(resize_w * ratio)
+
+        resize_h = resize_h if resize_h % 32 == 0 else (resize_h // 32) * 32
+        resize_w = resize_w if resize_w % 32 == 0 else (resize_w // 32) * 32
+        
     im = cv2.resize(im, (int(resize_w), int(resize_h)))
 
     ratio_h = resize_h / float(h)
@@ -133,17 +143,13 @@ def main(argv=None):
             raise
 
     # load trained model
-    json_file = open(os.path.join('/'.join(FLAGS.model_path.split('/')[0:-1]), 'model.json'), 'r')
-    loaded_model_json = json_file.read()
-    json_file.close()
-    model = model_from_json(loaded_model_json, custom_objects={'tf': tf, 'RESIZE_FACTOR': RESIZE_FACTOR})
-    model.load_weights(FLAGS.model_path)
+    model = load_model(FLAGS.model_path, custom_objects={"ResizeImages":ResizeImages}, compile=False)
 
     img_list = get_images()
     for img_file in img_list:
         img = cv2.imread(img_file)[:, :, ::-1]
         start_time = time.time()
-        img_resized, (ratio_h, ratio_w) = resize_image(img)
+        img_resized, (ratio_h, ratio_w) = resize_image(img, size=(224, 224))
 
         img_resized = (img_resized / 127.5) - 1
 

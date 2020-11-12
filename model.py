@@ -21,7 +21,7 @@ class EAST_model:
             if not os.path.exists(weights):
                 weights = 'imagenet'
                 
-        backbone = MobileNetV2(input_shape=(input_size, input_size, 3), alpha=0.75, input_tensor=input_image, weights=weights, include_top=False, pooling=None)
+        backbone = MobileNetV2(input_shape=(input_size, input_size, 3), alpha=0.5, input_tensor=input_image, weights=weights, include_top=False, pooling=None)
 
         x = backbone.get_layer('block_15_add').output
 
